@@ -1,9 +1,0 @@
-task,method,balanced_accuracy
-pathological,fixed_prompt,0.293
-age,fixed_prompt,0.577
-gender,fixed_prompt,0.461
-medication,fixed_prompt,nan
-pathological,learned_prompt,0.728
-age,learned_prompt,0.619
-gender,learned_prompt,0.527
-medication,learned_prompt,nan
