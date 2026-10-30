@@ -116,8 +116,7 @@ eeg_clip/
 │
 └── outputs/
     ├── checkpoints/              # Checkpoints per epoch (eeg_clip_epoch0.pt ... eeg_clip_final.pt)
-    ├── logs/
-    │   └── latest_run/           # Clean isolated CSVs of the latest run
+    ├── logs/          # Clean isolated CSVs of the latest run
     ├── spectrograms/             # Exported STFT topomaps and spectrogram_gallery.png
     └── eeg_vs_text_comparison.png# Step 3 comparison bar chart
 ```
