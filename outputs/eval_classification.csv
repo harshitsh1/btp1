@@ -1,5 +1,0 @@
-task,eeg_clip_logreg,eeg_clip_mlp,task_specific,alternative_task
-pathological,0.763,0.760,,
-age,0.652,0.623,,
-gender,0.535,0.540,,
-medication,nan,nan,,
