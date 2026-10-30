@@ -1,0 +1,83 @@
+# EEG-CLIP++ Implementation Plan
+
+## Overview
+Upgrade the existing EEG-CLIP codebase to EEG-CLIP++ with four major improvements, matching the user's "concrete combined proposal":
+
+1. **SigLIP sigmoid loss** (replaces InfoNCE to handle false negatives from near-duplicate reports)
+2. **LLM-extracted structured labels as auxiliary heads** (multi-label classification heads on EEG embeddings)
+3. **Channel-aware EEG encoder with window-level attention pooling** (electrode-position embeddings + attention across windows)
+4. **Learned prompt embeddings for zero-shot** (CoOp-style prompt tuning)
+
+## Files to Create/Modify
+
+### New Files
+| File | Purpose |
+|------|---------|
+| [`models/losses.py`](file:///e:/eeg_clip/models/losses.py) | SigLIP sigmoid loss + soft-target contrastive loss |
+| [`models/channel_aware_encoder.py`](file:///e:/eeg_clip/models/channel_aware_encoder.py) | Channel-aware EEG encoder with electrode position embeddings |
+| [`models/prompt_learner.py`](file:///e:/eeg_clip/models/prompt_learner.py) | CoOp-style learned prompt embeddings |
+| [`data/structured_labels.py`](file:///e:/eeg_clip/data/structured_labels.py) | LLM-based report parsing into structured clinical attributes |
+
+### Modified Files
+| File | Changes |
+|------|---------|
+| [`config.py`](file:///e:/eeg_clip/config.py) | New config fields for loss type, structured labels, prompt learning, channel-aware encoder |
+| [`models/eeg_clip.py`](file:///e:/eeg_clip/models/eeg_clip.py) | `EEGCLIPPlusPlus` model class with auxiliary heads, channel-aware encoder, new loss |
+| [`train.py`](file:///e:/eeg_clip/train.py) | Training loop supporting combined losses (contrastive + auxiliary) |
+| [`evaluate.py`](file:///e:/eeg_clip/evaluate.py) | Zero-shot with learned prompts, evaluation against structured labels |
+| [`data/dataset.py`](file:///e:/eeg_clip/data/dataset.py) | Include structured labels in dataset items |
+
+## Detailed Design
+
+### 1. SigLIP Sigmoid Loss (`models/losses.py`)
+
+Replace the symmetric InfoNCE cross-entropy with per-pair binary sigmoid loss:
+```
+L = -1/n² Σᵢ Σⱼ [ yᵢⱼ log σ(zᵢ·zⱼ · t - b) + (1-yᵢⱼ) log σ(-(zᵢ·zⱼ · t - b)) ]
+```
+where `yᵢⱼ = 1` for matching pairs, `0` otherwise, and `t`/`b` are learnable temperature/bias.
+
+Also implement **soft-target** variant: build `yᵢⱼ` from text-embedding cosine similarity (not hard 0/1), so near-duplicate reports get soft positive labels instead of being pushed apart.
+
+### 2. Structured Label Auxiliary Heads (`data/structured_labels.py` + model changes)
+
+Parse reports into multi-label attributes using rule-based extraction (with optional LLM enhancement):
+- `slowing` (yes/no)
+- `epileptiform_discharges` (yes/no)  
+- `focal_left` / `focal_right` / `generalized` (lateralization)
+- `background_rhythm` (normal/abnormal)
+- `frequency_band` mentions (delta/theta/alpha/beta)
+
+Add multi-label classification heads on the EEG embedding, trained jointly with contrastive loss:
+```
+L_total = L_contrastive + λ_aux * Σₖ L_bce(head_k(eeg_z), label_k)
+```
+
+### 3. Channel-Aware Encoder (`models/channel_aware_encoder.py`)
+
+- Tokenize EEG per-channel: each channel becomes a token sequence
+- Add **electrode position embeddings** (learnable, indexed by channel identity in the 10-20 system)
+- Use **Transformer encoder** layers for cross-channel attention
+- **Window-level attention pooling**: when multiple windows come from the same recording, pool them with learned attention weights for recording-level representation
+
+### 4. Learned Prompt Embeddings (`models/prompt_learner.py`)
+
+CoOp-style: instead of fixed text prompts like "This is a normal recording", learn `M` continuous prompt tokens that are prepended to the class-name token embedding:
+```
+prompt = [v₁][v₂]...[vₘ][CLASS]
+```
+where `vᵢ` are learnable and `[CLASS]` is the text embedding of the class name.
+
+> [!IMPORTANT]
+> The original model is preserved — `EEGCLIPPlusPlus` extends `EEGCLIP`, and all new features are gated by config flags so you can ablate any component.
+
+## Implementation Order
+1. `models/losses.py` — standalone, no dependencies
+2. `data/structured_labels.py` — standalone report parsing
+3. `models/channel_aware_encoder.py` — depends only on config
+4. `models/prompt_learner.py` — depends on text encoder
+5. `config.py` — add all new config fields
+6. `models/eeg_clip.py` — integrate into `EEGCLIPPlusPlus`
+7. `data/dataset.py` — add structured labels to items
+8. `train.py` — new training loop
+9. `evaluate.py` — new evaluation with learned prompts
